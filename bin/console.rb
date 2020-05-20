@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 
 require 'irb'
-require_relative '../lib/client'
+require_relative '../lib/todoable'
 
 def reload!(print = true)
   puts 'Reloading ...' if print
