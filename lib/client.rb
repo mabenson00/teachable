@@ -3,21 +3,20 @@ class Client
   require 'faraday'
   require 'pry'
   require 'json'
+  require "rest-client"
 
-  API_ENDPOINT = "https://todoable.teachable.tech/api"
-  AUTHENTICATION_ENDPOINT = "https://todoable.teachable.tech/api/authenticate"
+  BASE_URL = "https://todoable.teachable.tech/api"
 
-  attr_reader :token, :api_endpoint, :username, :password
+  attr_reader :token, :base_url, :username, :password, :expires_at
 
   # Client.new(username: "michael.alexander.benson@gmail.com", password: "todoable")
   def initialize(token: nil, username: nil, password: nil)
     @token = token
     @username = username 
     @password = password
-
+    @base_url = BASE_URL
     raise "Please enter a username/password or token" if incomplete_credentials?
 
-    authenticate
   end
 
   def lists(username)
@@ -30,54 +29,45 @@ class Client
 
 
   private
-  
-  def get_token 
-    return unless username && password
 
-    request(
-      http_method: :post,
-      endpoint: "",
-      authentication: true,
-    )
+  def request(http_method:, endpoint:, params: {})
+    authenticate
+
+    response = RestClient::Request.execute(
+      method: endpoint,
+      url: url(http_method),
+      headers: {content_type: :json, accept: :json, Authorization: token}
+      )
+    Oj.load(response.body)
   end
-  
+
   def authenticate 
     get_token unless valid_token?
   end
 
   def valid_token?
-    token && (expires_at.nil? || DateTime.now <= expires_at )
+    token &&  DateTime.now <= expires_at 
   end
+  
+  def get_token 
+    return unless username && password
 
-  def authentication_client 
-    @_client ||= Faraday.new(AUTHENTICATION_ENDPOINT) do |client|
-      client    .headers["Accept"] = "application/json"
-      client.headers["Content-Type"] = "application/json"
-      client.basic_auth(@user, @password)
-      client.adapter Faraday.default_adapter
-    end
-  end
-
-  def client
-    @_client ||= Faraday.new(API_ENDPOINT) do |client|
-      client.headers["Authorization"] = "token #{@token}" if @token
-      client.headers["Accept"] = "application/json"
-      client.headers["Content-Type"] = "application/json"
-      client.adapter Faraday.default_adapter
-    end
-  end
-
-  def request(http_method:, endpoint:, params: {}, authentication: false)
-    if !authentication
-      response = client.public_send(http_method, endpoint, params.to_json)
-    else 
-      response = authentication_client.public_send(http_method, endpoint, params.to_json)
-    end
-    raise "Unauthorized" if response.status == 401
-    Oj.load(response.body)
+    response = RestClient::Request.execute(
+    method: :post,
+    url: url('authenticate'),
+    user: username,
+    password: password,
+    headers:  {content_type: :json, accept: :json}
+    )
+    @token = JSON.parse(response.body)["token"]
+    @expires_at = DateTime.parse(JSON.parse(response.body)["expires_at"])
   end
 
   def incomplete_credentials?
     (@username.nil? || @password.nil?) && token.nil?
+  end
+
+  def url(endpoint)
+    "#{base_url}/#{endpoint}"
   end
 end
